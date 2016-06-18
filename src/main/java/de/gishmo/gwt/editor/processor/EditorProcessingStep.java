@@ -283,7 +283,7 @@ class EditorProcessingStep
     JavaFile javaFile = JavaFile.builder(context.getPackageName(),
                                          typeSpec.build())
                                 .build();
-    System.out.println(javaFile.toString());
+//    System.out.println(javaFile.toString());
     try {
       javaFile.writeTo(filer);
     } catch (IOException e) {
@@ -402,7 +402,7 @@ class EditorProcessingStep
     JavaFile javaFile = JavaFile.builder(context.getPackageName(),
                                          typeSpec.build())
                                 .build();
-    System.out.println(javaFile.toString());
+//    System.out.println(javaFile.toString());
     try {
       javaFile.writeTo(filer);
     } catch (IOException e) {
@@ -452,7 +452,7 @@ class EditorProcessingStep
     JavaFile javaFile = JavaFile.builder(context.getPackageName(),
                                          typeSpec.build())
                                 .build();
-    System.out.println(javaFile.toString());
+//    System.out.println(javaFile.toString());
     try {
       javaFile.writeTo(filer);
     } catch (IOException e) {
@@ -567,7 +567,7 @@ class EditorProcessingStep
                                                      .toString(),
                                          typeSpec.build())
                                 .build();
-    System.out.println(javaFile.toString());
+//    System.out.println(javaFile.toString());
     try {
       javaFile.writeTo(filer);
       // add file name to the list of already generated files to avoid a second generation
