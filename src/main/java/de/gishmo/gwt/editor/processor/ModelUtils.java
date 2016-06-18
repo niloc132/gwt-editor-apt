@@ -1,151 +1,94 @@
 package de.gishmo.gwt.editor.processor;
 
-import java.util.Optional;
-
-import javax.lang.model.element.ExecutableElement;
-import javax.lang.model.element.TypeElement;
-import javax.lang.model.type.TypeMirror;
-import javax.lang.model.util.ElementFilter;
-import javax.lang.model.util.Types;
-
 import com.google.auto.common.MoreTypes;
-import com.squareup.javapoet.ClassName;
+import com.google.common.collect.Sets;
 
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.Types;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * Created by colin on 7/17/16.
+ */
 public class ModelUtils {
-
-//  public static boolean containsMethod(TypeElement element,
-//                                       String path,
-//                                       String prefix) {
-//    if (path.indexOf(".") == -1) {
-//      return ElementFilter.methodsIn(element.getEnclosedElements())
-//                          .stream()
-//                          .filter(executebleElement -> executebleElement.getSimpleName()
-//                                                                        .toString()
-//                                                                        .equals(prefix + ModelUtils.capatilize(path)))
-//                          .findFirst()
-//                          .isPresent();
-//    } else {
-//      if (path.indexOf(".") == path.length()) {
-//        return false;
-//      }
-//      Optional<? extends ExecutableElement> optional = ElementFilter.methodsIn(element.getEnclosedElements())
-//                                                                    .stream()
-//                                                                    .filter(executebleElement -> executebleElement.getSimpleName()
-//                                                                                                                  .toString()
-//                                                                                                                  .equals("get" + ModelUtils.capatilize(path.substring(0,
-//                                                                                                                                                                       path.indexOf(".")))))
-//                                                                    .findFirst();
-//      if (optional.isPresent()) {
-//        ExecutableElement executableElement = optional.get();
-//        return ModelUtils.containsMethod((TypeElement) MoreTypes.asDeclared(optional.get()
-//                                                                                    .getReturnType())
-//                                                                .asElement(),
-//                                         path.substring(path.indexOf(".") + 1),
-//                                         prefix);
-//      } else {
-//        return false;
-//      }
-//    }
-//  }
-
-  public static ExecutableElement findGetMethod(TypeElement element,
-                                                String path) {
-    if (path.indexOf(".") == -1) {
-      Optional<? extends ExecutableElement> optional = ElementFilter.methodsIn(element.getEnclosedElements())
-                                                                    .stream()
-                                                                    .filter(executebleElement -> executebleElement.getSimpleName()
-                                                                                                                  .toString()
-                                                                                                                  .equals("get" + ModelUtils.capatilize(path)))
-                                                                    .findFirst();
-      if (optional.isPresent()) {
-        return optional.get();
-      } else {
-        return null;
-      }
-    } else {
-      if (path.indexOf(".") == path.length()) {
-        return null;
-      }
-      Optional<? extends ExecutableElement> optional = ElementFilter.methodsIn(element.getEnclosedElements())
-                                                                    .stream()
-                                                                    .filter(executebleElement -> executebleElement.getSimpleName()
-                                                                                                                  .toString()
-                                                                                                                  .equals("get" + ModelUtils.capatilize(path.substring(0,
-                                                                                                                                                                       path.indexOf(".")))))
-                                                                    .findFirst();
-      if (optional.isPresent()) {
-        ExecutableElement executableElement = optional.get();
-        return ModelUtils.findGetMethod((TypeElement) MoreTypes.asDeclared(optional.get()
-                                                                                   .getReturnType())
-                                                               .asElement(),
-                                        path.substring(path.indexOf(".") + 1));
-      } else {
-        return null;
+  public static List<? extends TypeMirror> findParameterizationOf(Types types,
+                                                                  TypeMirror intfType,
+                                                                  TypeMirror subType) {
+    for (TypeMirror supertype : getFlattenedSupertypeHierarchy(types, subType)) {
+      if (supertype instanceof DeclaredType) {
+        DeclaredType parameterized = (DeclaredType) supertype;
+        if (MoreTypes.asElement(intfType).equals(parameterized.asElement())) {//dodgy bit here, forcing them raw to compare their base types, is this safe?
+          // Found the desired supertype
+          return new ArrayList<>(parameterized.getTypeArguments());//copy contents, internal impl is nuts
+          //seems too easy...
+        }
       }
     }
+    return null;
   }
 
-  public static ExecutableElement findSetMethod(TypeElement element,
-                                                String path) {
-    if (path.indexOf(".") == -1) {
-      Optional<? extends ExecutableElement> optional = ElementFilter.methodsIn(element.getEnclosedElements())
-                                                                    .stream()
-                                                                    .filter(executebleElement -> executebleElement.getSimpleName()
-                                                                                                                  .toString()
-                                                                                                                  .equals("set" + ModelUtils.capatilize(path)))
-                                                                    .findFirst();
-      if (optional.isPresent()) {
-        return optional.get();
-      } else {
-        return null;
-      }
-    } else {
-      if (path.indexOf(".") == path.length()) {
-        return null;
-      }
-      Optional<? extends ExecutableElement> optional = ElementFilter.methodsIn(element.getEnclosedElements())
-                                                                    .stream()
-                                                                    .filter(executebleElement -> executebleElement.getSimpleName()
-                                                                                                                  .toString()
-                                                                                                                  .equals("get" + ModelUtils.capatilize(path.substring(0,
-                                                                                                                                                                       path.indexOf(".")))))
-                                                                    .findFirst();
-      if (optional.isPresent()) {
-        ExecutableElement executableElement = optional.get();
-        return ModelUtils.findGetMethod((TypeElement) MoreTypes.asDeclared(optional.get()
-                                                                                   .getReturnType())
-                                                               .asElement(),
-                                        path.substring(path.indexOf(".") + 1));
-      } else {
-        return null;
+  private static Set<String> VALUE_TYPE_NAMES = Sets.newHashSet(
+          BigDecimal.class.getName(),
+          BigInteger.class.getName(),
+          Boolean.class.getName(),
+          Byte.class.getName(),
+          Character.class.getName(),
+//          Date.class.getName(),
+          Double.class.getName(),
+          Enum.class.getName(),
+          Float.class.getName(),
+          Integer.class.getName(),
+          Long.class.getName(),
+          Short.class.getName(),
+          String.class.getName(),
+//          Splittable.class.getName(),
+          Void.class.getName()
+  );
+  public static boolean isValueType(TypeMirror type) {
+    if (type.getKind().isPrimitive()) {
+      return true;
+    }
+    if (MoreTypes.asElement(type).getKind() == ElementKind.ENUM) {
+      return true;
+    }
+
+    // At this point, GWT seemingly arbitrarily uses AutoBean/RequestFactory's notion
+    // of a value (via ValueCodex.getAllValueTypes()) to see if the given type is a
+    // "value type". More likely we'd want to make this configurable, if supported at
+    // all.
+    // I've restricted this list at least to immutable types that are general to Java.
+    return VALUE_TYPE_NAMES.contains(type.toString());
+  }
+
+
+  //TODO doesn't belong in here, would be nice to have in a "here is how you do GWT things" class
+  /**
+   * Returns all of the superclasses and superinterfaces for a given type
+   * including the type itself. The returned set maintains an internal
+   * breadth-first ordering of the type, followed by its interfaces (and their
+   * super-interfaces), then the supertype and its interfaces, and so on.
+   */
+  public static Set<TypeMirror> getFlattenedSupertypeHierarchy(Types types, TypeMirror t) {
+    List<TypeMirror> toAdd = new ArrayList<>();
+    LinkedHashSet<TypeMirror> result = new LinkedHashSet<>();
+
+    toAdd.add(t);
+
+    for (int i = 0; i < toAdd.size(); i++) {
+      TypeMirror type = toAdd.get(i);
+      if (result.add(type)) {
+        toAdd.addAll(types.directSupertypes(type));
       }
     }
+
+    return result;
   }
 
-  public static TypeMirror getInterfaceType(Types types,
-                                            TypeElement element,
-                                            Class<?> clazz) {
-    Optional<? extends TypeMirror> optinals = element.getInterfaces()
-                                                     .stream()
-                                                     .filter(interfaceType -> ClassName.get(types.erasure(interfaceType))
-                                                                                       .toString()
-                                                                                       .contains(clazz.getCanonicalName()))
-                                                     .findFirst();
-    if (optinals.isPresent()) {
-      return optinals.get();
-    } else {
-      if (element.getSuperclass() == null) {
-        return null;
-      }
-      return ModelUtils.getInterfaceType(types,
-                                         (TypeElement) types.asElement(element.getSuperclass()),
-                                         clazz);
-    }
-  }
-
-  private static String capatilize(String value) {
-    return value.substring(0,
-                           1)
-                .toUpperCase() + value.substring(1);
-  }
 }
