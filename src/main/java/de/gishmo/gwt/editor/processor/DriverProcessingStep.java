@@ -1,12 +1,14 @@
 package de.gishmo.gwt.editor.processor;
 
 import com.google.auto.common.BasicAnnotationProcessor.ProcessingStep;
+import com.google.auto.common.MoreElements;
 import com.google.auto.common.MoreTypes;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.SetMultimap;
 import com.google.gwt.editor.client.Editor;
 import com.google.gwt.editor.client.EditorVisitor;
 import com.google.gwt.editor.client.SimpleBeanEditorDriver;
+import com.google.gwt.editor.client.impl.AbstractEditorContext;
 import com.google.gwt.editor.client.impl.AbstractSimpleBeanEditorDriver;
 import com.google.gwt.editor.client.impl.RootEditorContext;
 import com.google.gwt.editor.client.impl.SimpleBeanEditorDelegate;
@@ -273,19 +275,19 @@ public class DriverProcessingStep implements ProcessingStep {
           if (d.isDelegateRequired()) {
             acceptBuilder.beginControlFlow("if ($L != null)", delegateFields.get(d));
           }
-//          ClassName editorContextName = getEditorContext(editorModel, data, d);
-//          acceptBuilder.addStatement("$T ctx = new $T(getObject(), editor.$L, appendPath(\"$L\"))",
-//                  editorContextName,
-//                  editorContextName,
-//                  d.getSimpleExpression(),
-//                  d.getDeclaredPath()
-//          );
+          ClassName editorContextName = getEditorContext(editorModel, data, d);
+          acceptBuilder.addStatement("$T ctx = new $T(getObject(), editor.$L, appendPath(\"$L\"))",
+                  editorContextName,
+                  editorContextName,
+                  d.getSimpleExpression(),
+                  d.getDeclaredPath()
+          );
           if (d.isDelegateRequired()) {
-//            acceptBuilder.addStatement("ctx.setEditorDelegate($L)", delegateFields.get(d));
-//            acceptBuilder.addStatement("ctx.traverse(visitor, $L)", delegateFields.get(d));
+            acceptBuilder.addStatement("ctx.setEditorDelegate($L)", delegateFields.get(d));
+            acceptBuilder.addStatement("ctx.traverse(visitor, $L)", delegateFields.get(d));
             acceptBuilder.endControlFlow();
           } else {
-//            acceptBuilder.addStatement("ctx.traverse(visitor, null)");
+            acceptBuilder.addStatement("ctx.traverse(visitor, null)");
           }
         }
 
@@ -302,10 +304,8 @@ public class DriverProcessingStep implements ProcessingStep {
                   .addStatement("return new $T()", compositeEditorDelegateType)
                   .build());
         }
-        TypeSpec delegateType = delegateTypeBuilder
-                .build();
 
-        JavaFile delegateFile = JavaFile.builder(packageName, delegateType).build();
+        JavaFile delegateFile = JavaFile.builder(packageName, delegateTypeBuilder.build()).build();
 
         delegateFile.writeTo(writer);
       }
@@ -314,6 +314,95 @@ public class DriverProcessingStep implements ProcessingStep {
     }
 
     return ClassName.get(packageName, delegateSimpleName);
+  }
+
+  private ClassName getEditorContext(EditorModel editorModel, EditorProperty parent, EditorProperty data) throws IOException {
+    String contextSimpleName =
+            escapedMaybeParameterizedBinaryName(parent.getEditorType())
+                    + "_"
+                    + data.getDeclaredPath().replace("_", "_1").replace(".", "_")
+            + "_Context";
+    String packageName = elements.getPackageOf(types.asElement(parent.getEditorType())).toString();
+
+    try {
+      JavaFileObject sourceFile = filer.createSourceFile(packageName + "." + contextSimpleName);
+      try (Writer writer = sourceFile.openWriter()) {
+        TypeSpec.Builder contextTypeBuilder = TypeSpec.classBuilder(contextSimpleName)
+                .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(AnnotationSpec.builder(Generated.class).addMember("value", "\"$L\"", "de.gishmo.gwt.editor.processor.DriverProcessor").build())
+                .superclass(ParameterizedTypeName.get(ClassName.get(AbstractEditorContext.class), ClassName.get(data.getEditedType())));
+
+        contextTypeBuilder.addField(ClassName.get(parent.getEditedType()), "parent", Modifier.PRIVATE, Modifier.FINAL);
+
+        contextTypeBuilder.addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(ClassName.get(parent.getEditedType()), "parent")
+                .addParameter(ParameterizedTypeName.get(ClassName.get(Editor.class), ClassName.get(data.getEditedType())), "editor")
+                .addParameter(String.class, "path")
+                .addStatement("super(editor, path)")
+                .addStatement("this.parent = parent")
+                .build());
+
+        contextTypeBuilder.addMethod(MethodSpec.methodBuilder("canSetInModel")
+                .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(Override.class)
+                .returns(boolean.class)
+                .addStatement("return parent != null && $L && $L",
+                        data.getSetterName() == null ? "false" : "true",
+                        data.getBeanOwnerGuard("parent")
+                )
+                .build());
+
+        contextTypeBuilder.addMethod(MethodSpec.methodBuilder("checkAssignment")
+                .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(Override.class)
+                .returns(ClassName.get(data.getEditedType()))
+                .addParameter(Object.class, "value")
+                .addStatement("return ($T) value", ClassName.get(data.getEditedType()))
+                .build());
+
+        contextTypeBuilder.addMethod(MethodSpec.methodBuilder("getEditedType")
+                .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(Override.class)
+                .returns(Class.class)
+                .addStatement("return $L.class", MoreTypes.asElement(data.getEditedType()))
+                .build());
+
+        contextTypeBuilder.addMethod(MethodSpec.methodBuilder("getFromModel")
+                .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(Override.class)
+                .returns(ClassName.get(data.getEditedType()))
+                .addStatement("return (parent != null && $L) ? parent$L$L : null",
+                        data.getBeanOwnerGuard("parent"),
+                        data.getBeanOwnerExpression(),
+                        data.getGetterExpression()
+                )
+                .build());
+
+        MethodSpec.Builder setInModelMethodBuilder = MethodSpec.methodBuilder("setInModel")
+                .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(Override.class)
+                .returns(void.class)
+                .addParameter(ClassName.get(data.getEditedType()), "data");
+        if (data.getSetterName() == null) {
+          setInModelMethodBuilder.addStatement("throw new UnsupportedOperationException()");
+        } else {
+          setInModelMethodBuilder.addStatement("parent$L.$L(data);",
+                  data.getBeanOwnerExpression(),
+                  data.getSetterName()
+          );
+        }
+        contextTypeBuilder.addMethod(setInModelMethodBuilder.build());
+
+        JavaFile contextFile = JavaFile.builder(packageName, contextTypeBuilder.build()).build();
+
+        contextFile.writeTo(writer);
+      }
+    } catch (FilerException ignored) {
+      //already exists, ignore
+    }
+
+    return ClassName.get(packageName, contextSimpleName);
   }
 
   protected ClassName getDriverInterfaceType() {
