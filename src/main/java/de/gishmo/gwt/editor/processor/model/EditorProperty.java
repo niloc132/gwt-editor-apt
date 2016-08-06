@@ -337,4 +337,12 @@ public class EditorProperty {
   public String getSimpleExpression() {
     return simpleExpression;
   }
+
+  /**
+   * Gets the path specified by the {@code @Path} annotation or inferred via
+   * convention.
+   */
+  public String getDeclaredPath() {
+    return declaredPath;
+  }
 }

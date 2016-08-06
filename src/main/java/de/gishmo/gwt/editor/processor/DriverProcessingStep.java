@@ -4,6 +4,7 @@ import com.google.auto.common.BasicAnnotationProcessor.ProcessingStep;
 import com.google.auto.common.MoreTypes;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.SetMultimap;
+import com.google.gwt.editor.client.Editor;
 import com.google.gwt.editor.client.EditorVisitor;
 import com.google.gwt.editor.client.SimpleBeanEditorDriver;
 import com.google.gwt.editor.client.impl.AbstractSimpleBeanEditorDriver;
@@ -37,6 +38,8 @@ import java.io.IOException;
 import java.io.Writer;
 import java.lang.annotation.Annotation;
 import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
 
@@ -146,7 +149,7 @@ public class DriverProcessingStep implements ProcessingStep {
               .addModifiers(Modifier.PROTECTED)
               .returns(delegateType)
               .addAnnotation(Override.class)
-              .addStatement("return new $T()", getEditorDelegate(rootEditorModel.getRootData()))//TODO
+              .addStatement("return new $T()", getEditorDelegate(rootEditorModel, rootEditorModel.getRootData()))
               .build();
 
       //implement interface, extend BaseEditorDriver or whatnot
@@ -166,78 +169,140 @@ public class DriverProcessingStep implements ProcessingStep {
     //end driver
   }
 
-  private ClassName getEditorDelegate(EditorProperty data) throws IOException {
+  private ClassName getEditorDelegate(EditorModel editorModel, EditorProperty data) throws IOException {
     String delegateSimpleName =
             escapedMaybeParameterizedBinaryName(data.getEditorType())
-            + "_"
-            + getEditorDelegateType().simpleName();
+                    + "_"
+                    + getEditorDelegateType().simpleName();
     String packageName = elements.getPackageOf(types.asElement(data.getEditorType())).toString();
 
     try {
       JavaFileObject sourceFile = filer.createSourceFile(packageName + "." + delegateSimpleName);
       try (Writer writer = sourceFile.openWriter()) {
 
+        // create a raw editor type so that we can reference it throughout. Since some type
+        // param of the editor might be protected or package protected, we have to make a
+        // raw reference to it consistently in this generated class.
+        TypeName rawEditorType = ClassName.get(types.erasure(data.getEditorType()));
 
-        FieldSpec editorField = FieldSpec.builder(ClassName.get(data.getEditorType()), "editor", Modifier.PRIVATE).build();
-        FieldSpec objectField = FieldSpec.builder(ClassName.get(data.getEditedType()), "object", Modifier.PRIVATE).build();
+        TypeSpec.Builder delegateTypeBuilder = TypeSpec.classBuilder(delegateSimpleName)
+                .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(AnnotationSpec.builder(Generated.class).addMember("value", "\"$L\"", "de.gishmo.gwt.editor.processor.DriverProcessor").build())
+                .superclass(getEditorDelegateType());//raw type here, for the same reason as above
 
-        MethodSpec getEditorMethod = MethodSpec.methodBuilder("getEditor")
+        NameFactory names = new NameFactory();
+        Map<EditorProperty, String> delegateFields = new IdentityHashMap<>();
+
+
+        delegateTypeBuilder.addField(FieldSpec.builder(rawEditorType, "editor", Modifier.PRIVATE).build());
+        names.addName("editor");
+        delegateTypeBuilder.addField(FieldSpec.builder(ClassName.get(data.getEditedType()), "object", Modifier.PRIVATE).build());
+        names.addName("object");
+
+        // Fields for the sub-delegates that must be managed
+        for (EditorProperty d : editorModel.getEditorData(data.getEditorType())) {
+          if (d.isDelegateRequired()) {
+            String fieldName = names.createName(d.getPropertyName() + "Delegate");
+            delegateFields.put(d, fieldName);
+            delegateTypeBuilder.addField(getEditorDelegateType(), fieldName, Modifier.PRIVATE);//TODO parameterize
+          }
+        }
+
+        delegateTypeBuilder.addMethod(MethodSpec.methodBuilder("getEditor")
                 .addModifiers(Modifier.PROTECTED)
-                .returns(ClassName.get(data.getEditorType()))
+                .returns(rawEditorType)
                 .addAnnotation(Override.class)
                 .addStatement("return editor")
-                .build();
+                .build());
 
-        MethodSpec setEditorMethod = MethodSpec.methodBuilder("setEditor")
+        delegateTypeBuilder.addMethod(MethodSpec.methodBuilder("setEditor")
                 .addModifiers(Modifier.PROTECTED)
                 .returns(void.class)
                 .addAnnotation(Override.class)
-                .addParameter(ClassName.get(data.getEditorType()), "editor")
-                .addStatement("this.editor = editor")
-                .build();
+                .addParameter(Editor.class, "editor")
+                .addStatement("this.editor = ($T) editor", rawEditorType)
+                .build());
 
-        MethodSpec getObjectMethod = MethodSpec.methodBuilder("getObject")
+        delegateTypeBuilder.addMethod(MethodSpec.methodBuilder("getObject")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(ClassName.get(data.getEditedType()))
                 .addAnnotation(Override.class)
                 .addStatement("return object")
-                .build();
+                .build());
 
-        MethodSpec setObjectMethod = MethodSpec.methodBuilder("setObject")
+        delegateTypeBuilder.addMethod(MethodSpec.methodBuilder("setObject")
                 .addModifiers(Modifier.PROTECTED)
                 .returns(void.class)
                 .addAnnotation(Override.class)
-                .addParameter(ClassName.get(data.getEditedType()), "object")
-                .addStatement("this.object = object")
-                .build();
+                .addParameter(ClassName.get(Object.class), "object")
+                .addStatement("this.object = ($T) object", ClassName.get(data.getEditedType()))
+                .build());
 
-        MethodSpec initializeSubDelegatesMethod = MethodSpec.methodBuilder("initializeSubDelegates")
+        MethodSpec.Builder initializeSubDelegatesBuilder = MethodSpec.methodBuilder("initializeSubDelegates")
                 .addModifiers(Modifier.PROTECTED)
                 .returns(void.class)
-                .addAnnotation(Override.class)
-                //TODO body
-                .build();
+                .addAnnotation(Override.class);
+        if (data.isCompositeEditor()) {
+          initializeSubDelegatesBuilder.addStatement("createChain($L.class)", MoreTypes.asElement(data.getComposedData().getEditedType()));
+        }
+        for (EditorProperty d : editorModel.getEditorData(data.getEditorType())) {
+          ClassName subDelegateType = getEditorDelegate(editorModel, d);
+          if (d.isDelegateRequired()) {
+            initializeSubDelegatesBuilder
+                    .beginControlFlow("if (editor.$L != null)", d.getSimpleExpression())
+                    .addStatement("$L = new $T()", delegateFields.get(d), subDelegateType)
+                    .addStatement("addSubDelegate($L, appendPath(\"$L\"), editor.$L)",
+                            delegateFields.get(d),
+                            d.getDeclaredPath(),
+                            d.getSimpleExpression()
+                    )
+                    .endControlFlow();
+          }
+        }
+        delegateTypeBuilder.addMethod(initializeSubDelegatesBuilder.build());
 
-        MethodSpec acceptMethod = MethodSpec.methodBuilder("accept")
+        MethodSpec.Builder acceptBuilder = MethodSpec.methodBuilder("accept")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(void.class)
                 .addAnnotation(Override.class)
-                .addParameter(EditorVisitor.class, "visitor")
-                //TODO body
-                .build();
+                .addParameter(EditorVisitor.class, "visitor");
+        if (data.isCompositeEditor()) {
+          acceptBuilder.addStatement("getEditorChain().accept(visitor)");
+        }
+        for (EditorProperty d : editorModel.getEditorData(data.getEditorType())) {
+          if (d.isDelegateRequired()) {
+            acceptBuilder.beginControlFlow("if ($L != null)", delegateFields.get(d));
+          }
+//          ClassName editorContextName = getEditorContext(editorModel, data, d);
+//          acceptBuilder.addStatement("$T ctx = new $T(getObject(), editor.$L, appendPath(\"$L\"))",
+//                  editorContextName,
+//                  editorContextName,
+//                  d.getSimpleExpression(),
+//                  d.getDeclaredPath()
+//          );
+          if (d.isDelegateRequired()) {
+//            acceptBuilder.addStatement("ctx.setEditorDelegate($L)", delegateFields.get(d));
+//            acceptBuilder.addStatement("ctx.traverse(visitor, $L)", delegateFields.get(d));
+            acceptBuilder.endControlFlow();
+          } else {
+//            acceptBuilder.addStatement("ctx.traverse(visitor, null)");
+          }
+        }
 
-        TypeSpec delegateType = TypeSpec.classBuilder(delegateSimpleName)
-                .addModifiers(Modifier.PUBLIC)
-                .addAnnotation(AnnotationSpec.builder(Generated.class).addMember("value", "\"$L\"", "de.gishmo.gwt.editor.processor.DriverProcessor").build())
-                .superclass(ParameterizedTypeName.get(getEditorDelegateType(), ClassName.get(data.getEditedType()), ClassName.get(data.getEditorType())))
-                .addField(editorField)
-                .addField(objectField)
-                .addMethod(getEditorMethod)
-                .addMethod(setEditorMethod)
-                .addMethod(getObjectMethod)
-                .addMethod(setObjectMethod)
-                .addMethod(initializeSubDelegatesMethod)
-                .addMethod(acceptMethod)
+
+        delegateTypeBuilder.addMethod(acceptBuilder.build());
+
+
+        if (data.isCompositeEditor()) {
+          ClassName compositeEditorDelegateType = getEditorDelegate(editorModel, data.getComposedData());
+          delegateTypeBuilder.addMethod(MethodSpec.methodBuilder("createComposedDelegate")
+                  .addModifiers(Modifier.PROTECTED)
+                  .returns(compositeEditorDelegateType)
+                  .addAnnotation(Override.class)
+                  .addStatement("return new $T()", compositeEditorDelegateType)
+                  .build());
+        }
+        TypeSpec delegateType = delegateTypeBuilder
                 .build();
 
         JavaFile delegateFile = JavaFile.builder(packageName, delegateType).build();
