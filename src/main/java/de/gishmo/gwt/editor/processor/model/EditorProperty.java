@@ -138,7 +138,8 @@ public class EditorProperty {
               lookingAt = maybeSetter.getReturnType();
               if (!lastPart && lookingAt.getKind().isPrimitive()) {
 //              poison(foundPrimitiveMessage(returnType, interstitialGetters.toString(), path));
-                return;
+//                return;
+                throw new IllegalStateException("!lastPart && lookingAt.getKind().isPrimitive()");
               }
               interstitialGetters.append(".").append(maybeSetter.getSimpleName().toString()).append("()");
               interstitialGuard.append(" && %1$s").append(interstitialGetters).append(" != null");
@@ -175,7 +176,8 @@ public class EditorProperty {
         }
         if (!foundGetterForPart) {
 //        poison(noGetterMessage(path, proxyType));
-          return;
+//          return;
+          throw new IllegalStateException("!foundGetterForPart");
         }
       }
 
