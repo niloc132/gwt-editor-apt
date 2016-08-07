@@ -123,8 +123,6 @@ public class DriverProcessingStep implements ProcessingStep {
     JavaFileObject driverJfo = filer.createSourceFile(pkgName + "." + typeName);
     try (Writer writer = driverJfo.openWriter()) {
 
-
-
       //impl accept(visitor) method
       ParameterizedTypeName rootEdContextType = ParameterizedTypeName.get(ClassName.get(RootEditorContext.class), TypeName.get(rootEditorModel.getProxyType()));
       MethodSpec accept = MethodSpec.methodBuilder("accept")
@@ -274,6 +272,8 @@ public class DriverProcessingStep implements ProcessingStep {
         for (EditorProperty d : editorModel.getEditorData(data.getEditorType())) {
           if (d.isDelegateRequired()) {
             acceptBuilder.beginControlFlow("if ($L != null)", delegateFields.get(d));
+          } else {
+            acceptBuilder.beginControlFlow("");
           }
           ClassName editorContextName = getEditorContext(editorModel, data, d);
           acceptBuilder.addStatement("$T ctx = new $T(getObject(), editor.$L, appendPath(\"$L\"))",
@@ -285,10 +285,10 @@ public class DriverProcessingStep implements ProcessingStep {
           if (d.isDelegateRequired()) {
             acceptBuilder.addStatement("ctx.setEditorDelegate($L)", delegateFields.get(d));
             acceptBuilder.addStatement("ctx.traverse(visitor, $L)", delegateFields.get(d));
-            acceptBuilder.endControlFlow();
           } else {
             acceptBuilder.addStatement("ctx.traverse(visitor, null)");
           }
+          acceptBuilder.endControlFlow();
         }
 
 
