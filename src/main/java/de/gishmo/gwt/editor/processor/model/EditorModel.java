@@ -1,24 +1,27 @@
 package de.gishmo.gwt.editor.processor.model;
 
 import com.google.auto.common.MoreTypes;
-import com.google.common.collect.Sets;
 import com.google.gwt.editor.client.Editor;
+import com.sun.tools.javac.code.Type;
 import de.gishmo.gwt.editor.processor.ModelUtils;
 
 import javax.annotation.processing.Messager;
+import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.VariableElement;
+import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.ElementFilter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 public class EditorModel {
 
@@ -76,8 +79,13 @@ public class EditorModel {
 
     // Only look for sub-editor accessors if the editor isn't a leaf
     if (!editorTypes.getTypes().isAssignable(editorType, editorTypes.getLeafValueEditorInterface())) {
-      Set<VariableElement> fields = ElementFilter.fieldsIn(Sets.newLinkedHashSet(MoreTypes.asElement(editorType).getEnclosedElements()));
-      for (VariableElement field : fields) {
+      LinkedHashSet<Element> members = ModelUtils.getFlattenedSupertypeHierarchy(editorTypes.getTypes(), editorType)
+              .stream()
+              .map(MoreTypes::asElement)
+              .map(Element::getEnclosedElements)
+              .flatMap(List::stream)
+              .collect(Collectors.toCollection(LinkedHashSet::new));
+      for (VariableElement field : ElementFilter.fieldsIn(members)) {
         if (field.getModifiers().contains(Modifier.PRIVATE)
                 || field.getModifiers().contains(Modifier.STATIC)
                 || field.getAnnotation(Editor.Ignore.class) != null) {
@@ -91,14 +99,13 @@ public class EditorModel {
           accumulateEditorData(data, flatData, toReturn);
         }
       }
-      Set<ExecutableElement> methods = ElementFilter.methodsIn(Sets.newLinkedHashSet(MoreTypes.asElement(editorType).getEnclosedElements()));
-      for (ExecutableElement method : methods) {
+      for (ExecutableElement method : ElementFilter.methodsIn(members)) {
         if (method.getModifiers().contains(Modifier.PRIVATE)
                 || method.getModifiers().contains(Modifier.STATIC)
                 || method.getAnnotation(Editor.Ignore.class) != null) {
           continue;
         }
-        TypeMirror methodReturnType = method.getReturnType();
+        TypeMirror methodReturnType = ((Type.MethodType) editorTypes.getTypes().asMemberOf((DeclaredType) editorType, method)).getReturnType();
         if (shouldExamine(methodReturnType) && method.getParameters().size() == 0) {
 
           if (method.getSimpleName().toString().equals("asEditor") && editorTypes.getTypes().isAssignable(editorType, editorTypes.getIsEditorInterface())) {

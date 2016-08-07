@@ -127,7 +127,7 @@ public class EditorProperty {
         }
         boolean lastPart = i == j - 1;
         boolean foundGetterForPart = false;
-
+        TypeMirror owner = lookingAt;
         LinkedHashSet<Element> members = ModelUtils.getFlattenedSupertypeHierarchy(types.getTypes(), lookingAt)
                 .stream()
                 .map(MoreTypes::asElement)
@@ -144,7 +144,7 @@ public class EditorProperty {
           }
           switch (which) {
             case GET: {
-              lookingAt = ((Type.MethodType) types.getTypes().asMemberOf((DeclaredType) lookingAt, maybeSetter)).getReturnType();
+              lookingAt = ((Type.MethodType) types.getTypes().asMemberOf((DeclaredType) owner, maybeSetter)).getReturnType();
               if (!lastPart && lookingAt.getKind().isPrimitive()) {
 //              poison(foundPrimitiveMessage(returnType, interstitialGetters.toString(), path));
 //                return;
@@ -167,7 +167,7 @@ public class EditorProperty {
                * setter.
                */
 
-                TypeMirror setterParamType = maybeSetter.getParameters().get(0).asType();
+                TypeMirror setterParamType = ((Type.MethodType) types.getTypes().asMemberOf((DeclaredType) owner, maybeSetter)).getParameterTypes().get(0);
                 // Handle the case of setFoo(int) vs. Editor<Integer>
                 if (setterParamType.getKind().isPrimitive()) {
                   // Replace the int with Integer
