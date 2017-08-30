@@ -1,7 +1,6 @@
 package de.gishmo.gwt.editor.processor;
 
 import com.google.auto.common.BasicAnnotationProcessor.ProcessingStep;
-import com.google.auto.common.MoreElements;
 import com.google.auto.common.MoreTypes;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.SetMultimap;
@@ -155,7 +154,7 @@ public class DriverProcessingStep implements ProcessingStep {
       //implement interface, extend BaseEditorDriver or whatnot
       TypeSpec driverType = TypeSpec.classBuilder(typeName)
               .addModifiers(Modifier.PUBLIC)
-              .addAnnotation(AnnotationSpec.builder(Generated.class).addMember("value", "\"$L\"", "de.gishmo.gwt.editor.processor.DriverProcessor").build())
+              .addAnnotation(AnnotationSpec.builder(Generated.class).addMember("value", "\"$L\"", DriverProcessor.class.getCanonicalName()).build())
               .addSuperinterface(TypeName.get(interfaceToImplement.asType()))
               .superclass(ParameterizedTypeName.get(getDriverSuperclassType(), TypeName.get(rootEditorModel.getProxyType()), TypeName.get(rootEditorModel.getEditorType())))
               .addMethod(accept)
@@ -187,7 +186,7 @@ public class DriverProcessingStep implements ProcessingStep {
 
         TypeSpec.Builder delegateTypeBuilder = TypeSpec.classBuilder(delegateSimpleName)
                 .addModifiers(Modifier.PUBLIC)
-                .addAnnotation(AnnotationSpec.builder(Generated.class).addMember("value", "\"$L\"", "de.gishmo.gwt.editor.processor.DriverProcessor").build())
+                .addAnnotation(AnnotationSpec.builder(Generated.class).addMember("value", "\"$L\"", DriverProcessor.class.getCanonicalName()).build())
                 .superclass(getEditorDelegateType());//raw type here, for the same reason as above
 
         NameFactory names = new NameFactory();
@@ -275,7 +274,7 @@ public class DriverProcessingStep implements ProcessingStep {
           } else {
             acceptBuilder.beginControlFlow("");
           }
-          ClassName editorContextName = getEditorContext(editorModel, data, d);
+          ClassName editorContextName = getEditorContext(data, d);
           acceptBuilder.addStatement("$T ctx = new $T(getObject(), editor.$L, appendPath(\"$L\"))",
                   editorContextName,
                   editorContextName,
@@ -316,7 +315,7 @@ public class DriverProcessingStep implements ProcessingStep {
     return ClassName.get(packageName, delegateSimpleName);
   }
 
-  private ClassName getEditorContext(EditorModel editorModel, EditorProperty parent, EditorProperty data) throws IOException {
+  private ClassName getEditorContext(EditorProperty parent, EditorProperty data) throws IOException {
     String contextSimpleName =
             escapedMaybeParameterizedBinaryName(parent.getEditorType())
                     + "_"
@@ -329,7 +328,7 @@ public class DriverProcessingStep implements ProcessingStep {
       try (Writer writer = sourceFile.openWriter()) {
         TypeSpec.Builder contextTypeBuilder = TypeSpec.classBuilder(contextSimpleName)
                 .addModifiers(Modifier.PUBLIC)
-                .addAnnotation(AnnotationSpec.builder(Generated.class).addMember("value", "\"$L\"", "de.gishmo.gwt.editor.processor.DriverProcessor").build())
+                .addAnnotation(AnnotationSpec.builder(Generated.class).addMember("value", "\"$L\"", DriverProcessor.class.getCanonicalName()).build())
                 .superclass(ParameterizedTypeName.get(ClassName.get(AbstractEditorContext.class), ClassName.get(data.getEditedType())));
 
         contextTypeBuilder.addField(ClassName.get(parent.getEditedType()), "parent", Modifier.PRIVATE, Modifier.FINAL);

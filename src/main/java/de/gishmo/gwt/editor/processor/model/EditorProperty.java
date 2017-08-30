@@ -2,13 +2,13 @@ package de.gishmo.gwt.editor.processor.model;
 
 import com.google.auto.common.MoreTypes;
 import com.google.gwt.editor.client.Editor;
-import com.sun.tools.javac.code.Type;
 import de.gishmo.gwt.editor.processor.ModelUtils;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.ExecutableType;
 import javax.lang.model.type.PrimitiveType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.ElementFilter;
@@ -30,7 +30,6 @@ public class EditorProperty {
     private final EditorTypes types;
 
     private final TypeMirror dataType;
-    private TypeMirror editedType;
 
     private Stream.Builder<EditorProperty> builder = Stream.builder();
     private Stream<EditorProperty> stream;
@@ -144,7 +143,7 @@ public class EditorProperty {
           }
           switch (which) {
             case GET: {
-              lookingAt = ((Type.MethodType) types.getTypes().asMemberOf((DeclaredType) owner, maybeSetter)).getReturnType();
+              lookingAt = ((ExecutableType) types.getTypes().asMemberOf((DeclaredType) owner, maybeSetter)).getReturnType();
               if (!lastPart && lookingAt.getKind().isPrimitive()) {
 //              poison(foundPrimitiveMessage(returnType, interstitialGetters.toString(), path));
 //                return;
@@ -167,7 +166,7 @@ public class EditorProperty {
                * setter.
                */
 
-                TypeMirror setterParamType = ((Type.MethodType) types.getTypes().asMemberOf((DeclaredType) owner, maybeSetter)).getParameterTypes().get(0);
+                TypeMirror setterParamType = ((ExecutableType) types.getTypes().asMemberOf((DeclaredType) owner, maybeSetter)).getParameterTypes().get(0);
                 // Handle the case of setFoo(int) vs. Editor<Integer>
                 if (setterParamType.getKind().isPrimitive()) {
                   // Replace the int with Integer

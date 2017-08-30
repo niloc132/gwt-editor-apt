@@ -2,7 +2,6 @@ package de.gishmo.gwt.editor.processor.model;
 
 import com.google.auto.common.MoreTypes;
 import com.google.gwt.editor.client.Editor;
-import com.sun.tools.javac.code.Type;
 import de.gishmo.gwt.editor.processor.ModelUtils;
 
 import javax.annotation.processing.Messager;
@@ -11,6 +10,7 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.ExecutableType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.ElementFilter;
 import java.util.ArrayList;
@@ -105,7 +105,7 @@ public class EditorModel {
                 || method.getAnnotation(Editor.Ignore.class) != null) {
           continue;
         }
-        TypeMirror methodReturnType = ((Type.MethodType) editorTypes.getTypes().asMemberOf((DeclaredType) editorType, method)).getReturnType();
+        TypeMirror methodReturnType = ((ExecutableType) editorTypes.getTypes().asMemberOf((DeclaredType) editorType, method)).getReturnType();
         if (shouldExamine(methodReturnType) && method.getParameters().size() == 0) {
 
           if (method.getSimpleName().toString().equals("asEditor") && editorTypes.getTypes().isAssignable(editorType, editorTypes.getIsEditorInterface())) {
